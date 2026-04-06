@@ -4,7 +4,8 @@ import sys
 
 sys.path.extend(['/var/www/feeder/feeder/logs'])
 import sqlite3
-from flask import Flask, flash, Markup, redirect, render_template, request, Response, session, url_for, abort
+from flask import Flask, flash, redirect, render_template, request, Response, session, url_for, abort
+from markupsafe import Markup
 import subprocess
 import commonTasks
 import os
