@@ -1,0 +1,29 @@
+{% extends "layout.html" %}
+
+{% block head %}
+{{ super() }}
+{% endblock %}
+
+{% block main %}
+<div class="row">
+    <div class="col-md-6 text-center">
+        <table class="FeedTable table">
+            <thead>
+            <th>Latest Feed Times</th>
+            <th>Feed Source</th>
+            </thead>
+            <tbody>
+            {% for entry in latestXNumberFeedTimes %}
+            <tr>
+                <td>{{entry[0]}}</td>
+                <td>{{entry[1]}}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="col-md-6 text-center">
+        <!--Graphs placeholder?-->
+    </div>
+</div>
+{% endblock %}

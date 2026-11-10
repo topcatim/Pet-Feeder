@@ -58,6 +58,9 @@ CAMERA_ADDRESS="http://192.168.1.210:8081"
 # Flask secret key — change this to something random
 SECRET_KEY="$(openssl rand -hex 24)"
 
+# Camera stream password (user "feeder") — printed at the end of setup
+STREAM_PASSWORD="$(openssl rand -base64 12 | tr -d '/+=')"
+
 # =============================================================================
 # 1. SYSTEM UPDATE
 # =============================================================================
@@ -259,7 +262,12 @@ webcontrol_localhost on
 webcontrol_parms 0
 stream_port 8081
 stream_localhost off
+# Camera stream needs a login (all Pi web pages are password-protected)
+stream_auth_method 1
+stream_authentication feeder:${STREAM_PASSWORD}
 EOF
+chown root:motion /etc/motion/motion.conf
+chmod 640 /etc/motion/motion.conf   # holds the stream password; motion must still read it
 
 # Motion camera startup delay (prevents race condition with bcm2835 driver)
 mkdir -p /etc/systemd/system/motion.service.d
@@ -410,6 +418,9 @@ echo "     sudo systemctl start apache2 motion feederbutton feedertimer"
 echo ""
 echo "  4. Check logs:"
 echo "     tail -f $APP_DIR/feeder/logs/apacheError.log"
+echo ""
+echo "  Camera stream login: feeder / $STREAM_PASSWORD"
+echo "  Web UI login: every page needs a login. Change the default admin password (ChangeMe!) straight away."
 echo ""
 echo "  5. Access feeder web UI:"
 echo "     http://$(hostname -I | awk '{print $1}')"

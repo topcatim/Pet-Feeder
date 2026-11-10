@@ -1,0 +1,19 @@
+{% extends "layout.html" %}
+
+{% block head %}
+{{ super() }}
+{% endblock %}
+
+{% block main %}
+<form class="form-signin" role="form" name="login" action="/addUser" method="post">
+  <h2 class="form-signin-heading">Enter credentials</h2>
+
+  <label for="usrname" class="sr-only">User Name or Email</label>
+  <input type="text" id="usrname" name="usrname" class="form-control" placeholder="User Name or Email" required autofocus>
+  <br>
+  <label for="psw" class="sr-only">Password</label>
+  <input type="password" id="psw" name="psw" class="form-control" placeholder="Password" required>
+  <br>
+  <button class="btn btn-lg btn-primary btn-block" type="submit">Submit</button>
+</form>
+{% endblock %}

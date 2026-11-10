@@ -39,6 +39,24 @@ latestXNumberVideoFeedTimesValue = str(configParser.get('feederConfig', 'Number_
 motionCameraSiteAddress = str(configParser.get('feederConfig', 'Motion_Camera_Site_Address'))
 nowMinusXDays = str(configParser.get('feederConfig', 'Number_Days_Of_Videos_To_Keep'))
 
+# Every page needs a login, not just /admin: the home page shows feed history and
+# its buttons spin the hopper. Signed-in browsers stay signed in for 30 days.
+app.permanent_session_lifetime = datetime.timedelta(days=30)
+app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='Lax')
+PUBLIC_ENDPOINTS = {'admin_login_page', 'login_verify', 'static'}
+
+
+@app.before_request
+def require_login():
+    if 'userLogin' in session:
+        return None
+    # Page styling is public; recorded videos are not
+    if request.endpoint in PUBLIC_ENDPOINTS and not request.path.startswith('/static/video'):
+        return None
+    if request.endpoint is None:          # unknown URL: let Flask answer 404
+        return None
+    return redirect(url_for('admin_login_page'))
+
 
 #####################################################################################
 ##########################################HOME PAGE##################################
@@ -359,9 +377,10 @@ def login_verify():
                 con.close()
                 return render_template('error.html', resultsSET="Invalid Credentials")
 
+            session.permanent = True
             session['userLogin'] = str(username)
 
-            return redirect(url_for('admin_login_page'))
+            return redirect(url_for('home_page'))
 
     except Exception as e:
         return render_template('error.html', resultsSET=e)

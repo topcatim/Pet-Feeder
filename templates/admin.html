@@ -1,0 +1,234 @@
+{% extends "layout.html" %}
+
+{% block head %}
+{{ super() }}
+<style>
+    #TimeService {display:inline-block}
+    #TimeServiceIcon {display:inline-block}
+    #TimeServiceStatus {display:inline-block}
+    #TimeServiceMessage {display:inline-block}
+    #startTimeService {display:inline-block}
+    #stopTimeService {display:inline-block}
+    #ButtonServiceIcon {display:inline-block}
+    #ButtonServiceStatus {display:inline-block}
+    #ButtonServiceMessage {display:inline-block}
+    #startButtonService {display:inline-block}
+    #stopButtonService {display:inline-block}
+    #WebcamServiceIcon {display:inline-block}
+    #WebcamServiceStatus {display:inline-block}
+    #WebcamServiceMessage {display:inline-block}
+    #startWebcamService {display:inline-block}
+    #stopWebcamService {display:inline-block}
+    #otherLinks {display:inline-block}
+    #BadLoginTable {display:inline-block}
+    #sshServiceIcon {display:inline-block}
+    #sshServiceStatus {display:inline-block}
+    #sshServiceMessage {display:inline-block}
+    #startSshService {display:inline-block}
+    #stopSshService {display:inline-block}
+    #UserLoginTable {display:inline-block}
+
+    .btn-space {
+        margin-bottom: 5px;
+    }
+
+    hr {
+        border: none;
+        height: 3px;
+        color: #9a9fa8;
+        background-color: #9a9fa8;
+        width="50%";
+    }
+    </style>
+{% endblock %}
+
+{% block main %}
+
+    <div id="TimeService">
+        <img id="TimeServiceIcon" src="/static/images/yellowcircle.png" height="20" width="20">
+        <h4 id="TimeServiceStatus">Time Service Status:</h4>
+        <form role="form" id="startTimeService" method="post" action="/startTimeService">
+            <button class="btn btn-success" type="submit">Start</button>
+        </form>
+        <form role="form" id="stopTimeService" method="post" action="/stopTimeService">
+            <button class="btn btn-danger" type="submit">Stop</button>
+        </form>
+        <div>
+            <h5 id="TimeServiceMessage">{{timeServiceFinalStatus}}</h5>
+        </div>
+    </div>
+
+
+    <div id="ButtonService">
+        <img id="ButtonServiceIcon" src="/static/images/yellowcircle.png" height="20" width="20">
+        <h4 id="ButtonServiceStatus">Button Service Status:</h4>
+        <form role="form" id="startButtonService" method="post" action="/startButtonService">
+            <button class="btn btn-success" type="submit">Start</button>
+        </form>
+        <form role="form" id="stopButtonService" method="post" action="/stopButtonService">
+            <button class="btn btn-danger" type="submit">Stop</button>
+        </form>
+        <div>
+            <h5 id="ButtonServiceMessage">{{buttonServiceFinalStatus}}</h5>
+        </div>
+    </div>
+
+
+    <div id="WebcamService">
+        <img id="WebcamServiceIcon" src="/static/images/yellowcircle.png" height="20" width="20">
+        <h4 id="WebcamServiceStatus">Webcam Status:</h4>
+        <form role="form" id="startWebcamService" method="post" action="/startWebcamService">
+            <button class="btn btn-success" type="submit">Start</button>
+        </form>
+        <form role="form" id="stopWebcamService" method="post" action="/stopWebcamService">
+            <button class="btn btn-danger" type="submit">Stop</button>
+        </form>
+        <div>
+            <h5 id="WebcamServiceMessage">{{webcameraServiceFinalStatus}}</h5>
+        </div>
+    </div>
+
+
+    <div id="sshService">
+        <img id="sshServiceIcon" src="/static/images/yellowcircle.png" height="20" width="20">
+        <h4 id="sshServiceStatus">SSH Status:</h4>
+        <form role="form" id="startSshService" method="post" action="/startSshService">
+            <button class="btn btn-success" type="submit">Start</button>
+        </form>
+        <form role="form" id="stopSshService" method="post" action="/stopSshService">
+            <button class="btn btn-danger" type="submit">Stop</button>
+        </form>
+        <div>
+            <h5 id="sshServiceMessage">{{sshServiceFinalStatus}}</h5>
+        </div>
+    </div>
+
+    <hr>
+
+    <div id="BadLoginTable">
+        <h4>Invalid logins</h4>
+
+        {% if invalidLogins != None %}
+        <table class="table">
+            <thead>
+            <th><h5>Login Name</h5></th>
+            <th><h5>Login PW</h5></th>
+            <th><h5>Login Date</h5></th>
+            </thead>
+            <tbody>
+            {% for entry in invalidLogins %}
+            <tr>
+                <td>{{entry[0]}}</td>
+                <td>{{entry[1]}}</td>
+                <td>{{entry[2]}}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+
+        <a href="/clearBadLoginList" class="btn btn-primary">Clear List</a>
+        {% else %}
+        <h5><i>No results</i></h5>
+        {% endif %}
+    </div>
+
+    <hr>
+
+    <div id="UserLoginTable">
+        <h4>User logins</h4>
+
+        {% if userLogins != None %}
+
+        <form name="myForm" method="post">
+            <table class="table" id="userTable">
+                <thead>
+                <th><h5>User Name</h5></th>
+                <th><h5>Delete User</h5></th>
+                </thead>
+                <tbody>
+                {% for entry in userLogins %}
+                <tr>
+                    <td>{{entry[1]}}</td>
+                    <td class="text-center">
+                        <input class="btn-sm btn-danger" type="button" value="Delete" onclick="deleteRow(this)"/>
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </form>
+
+        {% else %}
+        <h5><i>No logins</i></h5>
+        {% endif %}
+    </div>
+
+    <div>
+        <a href="/User" class="btn btn-primary">Add User</a>
+    </div>
+
+    <hr>
+
+
+    <div id="OtherLinks">
+        <a href="/" class="btn btn-primary btn-space">Home</a>
+        <a href="/history" class="btn btn-primary btn-space">History</a>
+        <a href="/logout" class="btn btn-primary btn-space">Logout</a>
+    </div>
+
+
+    <script>
+        var a=document.getElementById("TimeServiceMessage");
+        var a=a.innerHTML
+        if (a.match(/Active.*/)) {
+            document.getElementById("TimeServiceIcon").setAttribute("src","/static/images/greencircle.png")
+        }
+        if (a.match(/Inactive.*/)) {
+            document.getElementById("TimeServiceIcon").setAttribute("src","/static/images/redcircle.png")
+        }
+    </script>
+
+    <script>
+        var a=document.getElementById("ButtonServiceMessage");
+        var a=a.innerHTML
+        if (a.match(/Active.*/)) {
+            document.getElementById("ButtonServiceIcon").setAttribute("src","/static/images/greencircle.png")
+        }
+        if (a.match(/Inactive.*/)) {
+            document.getElementById("ButtonServiceIcon").setAttribute("src","/static/images/redcircle.png")
+        }
+    </script>
+
+    <script>
+        var a=document.getElementById("WebcamServiceMessage");
+        var a=a.innerHTML
+        if (a.match(/Active.*/)) {
+            document.getElementById("WebcamServiceIcon").setAttribute("src","/static/images/greencircle.png")
+        }
+        if (a.match(/Inactive.*/)) {
+            document.getElementById("WebcamServiceIcon").setAttribute("src","/static/images/redcircle.png")
+        }
+    </script>
+
+    <script>
+        var a=document.getElementById("sshServiceMessage");
+        var a=a.innerHTML
+        if (a.match(/Active.*/)) {
+            document.getElementById("sshServiceIcon").setAttribute("src","/static/images/greencircle.png")
+        }
+        if (a.match(/Inactive.*/)) {
+            document.getElementById("sshServiceIcon").setAttribute("src","/static/images/redcircle.png")
+        }
+    </script>
+
+
+    <script>
+        function deleteRow(btn){
+            var table=document.getElementById('userTable');
+            var i=btn.parentNode.parentNode.rowIndex;
+            var cellVal=table.rows[i].cells[0].innerHTML;
+            document.myForm.action = "{{url_for('deleteUser',id='cellVal')}}".replace('cellVal',cellVal)
+            document.myForm.submit();
+        }
+    </script>
+{% endblock %}

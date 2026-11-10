@@ -1,0 +1,22 @@
+{% extends "layout.html" %}
+
+{% block head %}
+{{ super() }}
+{% endblock %}
+
+{% block main %}
+    <h1 class="page-header">ERROR</h1>
+    <br>
+    <h3>{{resultsSET}}</h3>
+    <br>
+    <button class="btn btn-primary btn-lg" onclick="goBack()">&laquo; Go Back</button>
+    <script>
+        function goBack() {
+            window.history.back();
+        }
+    </script>
+{% endblock %}
+
+
+
+
