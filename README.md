@@ -15,5 +15,5 @@ See REBUILD.md (coming soon)
 ## Security
 
 - **Every page needs a login** (Flask session, 30 days), including the feed buttons and recorded videos. Only the login page and page styling are public.
-- **The camera stream (port 8081) needs a login** (`motion` basic auth, user `feeder`); the password is in `/etc/motion/motion.conf` (root:motion, 640).
+- **Live video** is at `/live`, behind the same login. `motion`'s stream (port 8081) only listens on the Pi itself (`stream_localhost on`).
 - Change the default `admin` password (`ChangeMe!`) on any new install.

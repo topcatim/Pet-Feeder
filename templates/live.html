@@ -1,0 +1,14 @@
+{% extends "layout.html" %}
+
+{% block head %}
+{{ super() }}
+{% endblock %}
+
+{% block main %}
+<div class="container text-center">
+    <h3>Live video</h3>
+    <!-- Served through this site (login required); the camera itself only listens on the Pi -->
+    <img src="/live/stream" alt="Live camera" style="max-width:100%;height:auto;border-radius:6px;">
+    <p><a href="/">Back</a></p>
+</div>
+{% endblock %}

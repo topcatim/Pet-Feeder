@@ -312,6 +312,39 @@ def DetectCamera():
         return 'status=0'
 
 
+#####################################################################################
+##########################################LIVE VIDEO#################################
+#####################################################################################
+# The camera stream (motion, port 8081) only listens on the Pi itself; it is shown
+# through this site so the normal login protects it (one login, works on phones).
+
+@app.route('/live')
+def live_page():
+    return render_template('live.html')
+
+
+@app.route('/live/stream')
+def live_stream():
+    import urllib.request
+    try:
+        upstream = urllib.request.urlopen('http://127.0.0.1:8081/', timeout=10)
+    except Exception as e:
+        return Response('Camera unavailable: ' + str(e), status=503, mimetype='text/plain')
+
+    def relay():
+        try:
+            while True:
+                chunk = upstream.read(16384)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            upstream.close()
+
+    return Response(relay(), content_type=upstream.headers.get('Content-Type'),
+                    headers={'Cache-Control': 'no-store'})
+
+
 ######################################################################################
 ##########################################ADMIN PAGE##################################
 ######################################################################################
