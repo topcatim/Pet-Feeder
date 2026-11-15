@@ -6,3 +6,8 @@ app.cfg
 googleapisecret.json
 feeder.db
 *.db
+
+# Production-only files
+*.bak*
+backups/
+static/video/
