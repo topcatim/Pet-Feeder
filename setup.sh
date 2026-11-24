@@ -238,7 +238,8 @@ target_dir $APP_DIR/feeder/static/video
 videodevice /dev/video0
 width 640
 height 480
-framerate 15
+# 5 fps, not 15: the Pi Zero W has one core and at 15 fps the camera starves the web app
+framerate 5
 text_left CAMERA1
 text_right %Y-%m-%d\n%T-%q
 emulate_motion off
