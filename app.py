@@ -304,10 +304,11 @@ def video_page(videoid):
 def DetectCamera():
     try:
 
-        process = subprocess.Popen(["vcgencmd", "get_camera"],
-                                   stdout=subprocess.PIPE,
-                                   stderr=subprocess.STDOUT)
-        return process.stdout.read()
+        # vcgencmd get_camera only knows the legacy camera stack (always detected=0 on
+        # Trixie); report on the camera service instead: feeder-camrec, or the older
+        # feeder-cam (is-active succeeds if either is running).
+        process = subprocess.run(["systemctl", "is-active", "--quiet", "feeder-camrec", "feeder-cam"])
+        return 'detected=1' if process.returncode == 0 else 'detected=0'
     except Exception as e:
         return 'status=0'
 
