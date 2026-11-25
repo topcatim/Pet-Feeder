@@ -58,10 +58,10 @@ sudo bash setup.sh
 **This takes 15–25 minutes on a Pi Zero.** It will:
 - Update the OS
 - Enable camera, I2C, serial interfaces
-- Install Apache, mod_wsgi, motion, sqlite3
+- Install Apache, mod_wsgi, picamera2, PyAV, sqlite3
 - Create a Python virtualenv with all dependencies
 - Clone the app from GitHub
-- Configure Apache, motion, log rotation
+- Configure Apache, the camera service (feeder-camrec), log rotation
 - Install systemd services for button listener and feed scheduler
 - Apply security hardening (fail2ban, UFW firewall, SSH key-only auth)
 
@@ -107,7 +107,7 @@ After reboot (give it 60 seconds):
 ```bash
 # Check everything is running
 sudo systemctl status apache2
-sudo systemctl status motion
+sudo systemctl status feeder-camrec
 sudo systemctl status feederbutton
 sudo systemctl status feedertimer
 
@@ -140,14 +140,16 @@ Default login is set during `createFiles.py` — check the upstream docs if you'
 
 ### Camera
 - Pi Camera v1 (ov5647 sensor, CSI ribbon connector), loaded with `dtoverlay=ov5647` in `config.txt`
-- `feeder-cam.service` reads the camera with picamera2 and serves MJPEG on `127.0.0.1:8090`
-  (motion can't open the camera itself on 32-bit Trixie). Its files are in `camera/`.
-- `motion` reads that stream, records on movement and re-streams on `127.0.0.1:8081`;
-  the web app shows it at `/live` behind the login
-- Both run at **5 fps**: at 15 fps the camera kept the single CPU core at 100% and web pages
-  took up to a minute to load. Change `FrameRate` in `camera/camstream.py` and `framerate`
-  in `motion.conf` together
-- Motion-triggered video saved to `/var/www/feeder/feeder/static/video/`
+- `feeder-camrec.service` runs `camera/camrecord.py`, which does everything camera-related:
+  - records at **15 fps** with the Pi Zero's **hardware H.264 encoder** (about 40% of the one
+    CPU core; the old motion setup maxed it out at 15 fps in software)
+  - checks a tiny 80x60 copy of the image 5 times a second for movement, and saves
+    `cam-YYYYMMDDHHMMSS.mp4` from 3 s before the movement to about 10 s after it (60 s max per file)
+  - serves the live view (MJPEG, 3 fps) on `127.0.0.1:8081`; the web app shows it at `/live`
+    behind the login
+- Sensitivity and timings are constants at the top of `camrecord.py`
+- It runs as the `motion` user (left over from the old motion setup, which it replaced)
+- Recordings saved to `/var/www/feeder/feeder/static/video/`
 - Videos auto-deleted after 1 day (configurable in `app.cfg`)
 
 ---
@@ -191,15 +193,15 @@ tail -20 /var/www/feeder/feeder/logs/apacheError.log
 ```
 
 ### Camera not working / no recordings
-The ribbon is marginal and the sensor sometimes fails to probe at boot. `feeder-cam` re-probes it
-up to 10 times before starting (`camera/probe-camera.sh`); motion starts after `feeder-cam`.
+The ribbon is marginal and the sensor sometimes fails to probe at boot. `feeder-camrec` re-probes
+it up to 10 times before starting (`camera/probe-camera.sh`). Its log shows each movement and saved file.
 ```bash
-systemctl status feeder-cam motion
-journalctl -u feeder-cam -u motion -n 30
-curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8090/stream.mjpg --max-time 3   # camera stream
-sudo systemctl restart feeder-cam motion
+systemctl status feeder-camrec
+journalctl -u feeder-camrec -n 30
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8081/ --max-time 3   # live view (200 = OK)
+sudo systemctl restart feeder-camrec
 ```
-A single "Error capturing first image" from motion right after a restart is normal; it connects a second later.
+The web page hides the live view and videos when `feeder-camrec` isn't running.
 
 ### Feed button not working
 ```bash

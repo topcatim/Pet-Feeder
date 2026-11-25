@@ -3,18 +3,18 @@
 # Pet Feeder — Raspberry Pi Zero (original) Setup Script
 # =============================================================================
 # Target OS: Raspberry Pi OS Lite 32-bit, Trixie (13) — what the Pi runs today.
-#            The camera setup (picamera2 + feeder-cam) needs Trixie.
+#            The camera setup (picamera2 + feeder-camrec) needs Trixie.
 #
 # Usage: sudo bash setup.sh
 #
 # What this does:
 #   1. System update
 #   2. Enable camera, I2C, serial interfaces
-#   3. Install system dependencies (Apache, mod_wsgi, motion, picamera2, sqlite3)
+#   3. Install system dependencies (Apache, mod_wsgi, picamera2, PyAV, sqlite3)
 #   4. Create Python virtualenv and install pip packages
 #   5. Clone pet feeder app from GitHub
 #   6. Configure Apache virtual host
-#   7. Configure the camera stream (feeder-cam) and motion
+#   7. Configure the camera (feeder-camrec: records movement, serves live view)
 #   8. Install init.d services (button + time scheduler)
 #   9. Set up log rotation
 #  10. Set correct permissions
@@ -99,15 +99,15 @@ apt-get install -y -qq \
     apache2-dev \
     libapache2-mod-wsgi-py3 \
     sqlite3 \
-    motion \
     acl \
     git \
     logrotate \
     usbutils \
     i2c-tools
 
-# Camera library; the recommends pull in a desktop/Qt stack the Pi Zero doesn't need
-apt-get install -y -qq --no-install-recommends python3-picamera2
+# Camera library + PyAV (writes the .mp4 files); the recommends pull in a desktop/Qt
+# stack the Pi Zero doesn't need
+apt-get install -y -qq --no-install-recommends python3-picamera2 python3-av
 
 info "System packages installed"
 
@@ -225,70 +225,26 @@ usermod -aG video www-data
 info "Apache configured"
 
 # =============================================================================
-# 7. CAMERA STREAM + MOTION
+# 7. CAMERA (feeder-camrec: records movement + live view)
 # =============================================================================
-step "Configuring camera stream and motion"
+step "Configuring the camera"
 
-# motion can't open the camera directly on 32-bit Trixie (libcamera's V4L2 compat layer
-# misses __ioctl_time64), so feeder-cam reads it with picamera2 and serves MJPEG on
-# 127.0.0.1:8090, and motion reads that stream.
-install -d -m 755 /usr/local/lib/feeder-cam
-install -m 755 "$APP_DIR/feeder/camera/camstream.py" /usr/local/lib/feeder-cam/camstream.py
-install -m 755 "$APP_DIR/feeder/camera/probe-camera.sh" /usr/local/lib/feeder-cam/probe-camera.sh
-install -m 644 "$APP_DIR/feeder/camera/feeder-cam.service" /etc/systemd/system/feeder-cam.service
-
-# Add pi user to motion group
-usermod -aG motion ${FEEDER_USER}
+# camrecord.py reads the camera with picamera2, records movement to .mp4 with the Pi's
+# hardware H.264 encoder, and serves the live view on 127.0.0.1:8081 for the app's /live.
+# It replaces motion, which can't open the camera on 32-bit Trixie and needed software
+# encoding. It runs as the "motion" system user (the name is from the old setup).
+id motion &>/dev/null || useradd --system --user-group --no-create-home --shell /usr/sbin/nologin motion
 usermod -aG video motion
+usermod -aG motion ${FEEDER_USER}
 
-cat > /etc/motion/motion.conf << EOF
-daemon off
-setup_mode off
-log_level 6
-target_dir $APP_DIR/feeder/static/video
-netcam_url http://127.0.0.1:8090/stream.mjpg
-width 640
-height 480
-# 5 fps, not 15: the Pi Zero W has one core and at 15 fps the camera starves the web app
-# (keep in step with FrameRate in camera/camstream.py)
-framerate 5
-text_left CAMERA1
-text_right %Y-%m-%d\n%T-%q
-emulate_motion off
-threshold 1500
-despeckle_filter EedDl
-minimum_motion_frames 1
-event_gap 60
-pre_capture 3
-post_capture 0
-picture_output off
-picture_filename %Y%m%d%H%M%S-%q
-movie_output on
-movie_max_time 60
-movie_quality 45
-movie_codec mp4
-movie_filename %t-%v-%Y%m%d%H%M%S
-webcontrol_port 8080
-webcontrol_localhost on
-webcontrol_parms 0
-stream_port 8081
-stream_maxrate 2
-# The stream only listens on the Pi; the web app shows it at /live behind its login
-stream_localhost on
-EOF
-
-# Start motion after the camera stream (replaces the old 15 s sleep for the bcm2835 driver)
-mkdir -p /etc/systemd/system/motion.service.d
-rm -f /etc/systemd/system/motion.service.d/camera-wait.conf
-cat > /etc/systemd/system/motion.service.d/feeder-cam.conf << EOF
-[Unit]
-Wants=feeder-cam.service
-After=feeder-cam.service
-EOF
+install -d -m 755 /usr/local/lib/feeder-cam
+install -m 755 "$APP_DIR/feeder/camera/camrecord.py" /usr/local/lib/feeder-cam/camrecord.py
+install -m 755 "$APP_DIR/feeder/camera/probe-camera.sh" /usr/local/lib/feeder-cam/probe-camera.sh
+install -m 644 "$APP_DIR/feeder/camera/feeder-camrec.service" /etc/systemd/system/feeder-camrec.service
 
 systemctl daemon-reload
-systemctl enable feeder-cam.service motion.service
-info "Camera stream (feeder-cam) and motion configured"
+systemctl enable feeder-camrec.service
+info "Camera (feeder-camrec) configured"
 
 # =============================================================================
 # 8. SERVICES (button listener + feed scheduler)
@@ -365,7 +321,7 @@ chown -R ${FEEDER_USER}:www-data "$APP_DIR"
 chmod -R 750 "$APP_DIR"
 chmod -R 770 "$APP_DIR/feeder"
 
-# motion (its own user) saves recordings into static/video: let it through the parent
+# The camera service (user motion) saves recordings into static/video: let it through the parent
 # folders without being able to list them, and own the video folder's group
 setfacl -m u:motion:x "$APP_DIR" "$APP_DIR/feeder" "$APP_DIR/feeder/static"
 chgrp motion "$APP_DIR/feeder/static/video"
@@ -432,7 +388,7 @@ echo "  2. Install your SSH public key:"
 echo "     ssh-copy-id pi@$(hostname -I | awk '{print $1}')"
 echo ""
 echo "  3. Start services:"
-echo "     sudo systemctl start apache2 feeder-cam motion feederbutton feedertimer"
+echo "     sudo systemctl start apache2 feeder-camrec feederbutton feedertimer"
 echo ""
 echo "  4. Check logs:"
 echo "     tail -f $APP_DIR/feeder/logs/apacheError.log"
