@@ -1,0 +1,20 @@
+[Unit]
+Description=Pet feeder camera: records movement and serves the live view (replaces feeder-cam + motion)
+Conflicts=feeder-cam.service motion.service
+
+[Service]
+User=motion
+Group=motion
+SupplementaryGroups=video
+ExecStartPre=+/usr/local/lib/feeder-cam/probe-camera.sh
+ExecStart=/usr/bin/python3 -u /usr/local/lib/feeder-cam/camrecord.py
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/www/feeder/feeder/static/video
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
