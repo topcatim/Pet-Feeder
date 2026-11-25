@@ -2,7 +2,7 @@
 
 ## ⚠️ Critical: OS Version
 
-The feeder is an **original Pi Zero W** (ARMv6, one core). It runs **Raspberry Pi OS Lite 32-bit, Trixie (13)**, and the camera setup in `setup.sh` (picamera2 + the `feeder-cam` stream) is written for that.
+The feeder is an **original Pi Zero W** (ARMv6, one core). It runs **Raspberry Pi OS Lite 32-bit, Trixie (13)**, and the camera setup in `setup.sh` (picamera2 + `feeder-camrec`) is written for that.
 
 Always use the **32-bit Lite** image. The 64-bit images don't run on a Pi Zero v1, and the Desktop version wastes RAM the Pi Zero doesn't have to spare.
 
@@ -67,9 +67,11 @@ sudo bash setup.sh
 
 ---
 
-## Step 4 — Add Google API Credentials
+## Step 4 — Add Google API Credentials (optional)
 
-The feeder logs feed times to Google Sheets. You need a service account credentials file:
+The feeder can also log feed times to Google Sheets. Everything else works without it (the
+current Pi has no credentials file), and the Google libraries are only loaded when a sheet
+update actually runs. To turn it on you need a service account credentials file:
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com)
 2. Select your project → APIs & Services → Credentials
@@ -139,6 +141,55 @@ Default login is set during `createFiles.py` — check the upstream docs if you'
 
 ---
 
+## Step 8 — Let the Admin Page Control Services
+
+The admin page shows the status of the button, scheduler, camera and SSH services (read with
+one `systemctl show` call, no sudo needed). Its **start/stop** buttons run `sudo service …`
+as the app's user, which needs a sudo rule. `setup.sh` doesn't create it yet; on the current
+Pi it is `/etc/sudoers.d/020_feeder-web`:
+
+```bash
+sudo tee /etc/sudoers.d/020_feeder-web.tmp >/dev/null <<'EOF'
+feeder ALL=(root) NOPASSWD: /usr/sbin/service feeder-camrec start, /usr/sbin/service feeder-camrec stop, /usr/sbin/service feederButtonService start, /usr/sbin/service feederButtonService stop, /usr/sbin/service feederButtonService status, /usr/sbin/service feederTimeService start, /usr/sbin/service feederTimeService stop, /usr/sbin/service feederTimeService status
+EOF
+sudo visudo -cf /etc/sudoers.d/020_feeder-web.tmp && sudo mv /etc/sudoers.d/020_feeder-web.tmp /etc/sudoers.d/020_feeder-web
+```
+Replace `feeder` with the user the app runs as (the `WSGIDaemonProcess user=` in the Apache
+config) and the service names with yours. SSH has no start/stop rule on purpose: stopping it
+from a web page could lock you out.
+
+---
+
+## How the Web UI Is Served
+
+```
+iPhone ──HTTPS (tailnet only)──▶ tailscaled :443 ──▶ Apache 127.0.0.1:80
+                                                       ├─ /static/css, js, images → files, cached 1 week
+                                                       └─ everything else → Flask app (mod_wsgi daemon, login)
+                                                            └─ /live/stream ◀── feeder-camrec 127.0.0.1:8081
+```
+
+Kept this way because the Pi Zero has one slow core:
+
+- **The app is loaded when Apache starts**, not on the first visit
+  (`WSGIScriptAlias … process-group=feeder application-group=%{GLOBAL}`). Importing it takes
+  about 8 s at boot and after Apache's nightly reload at 00:30 (log rotation); before, the
+  first visitor waited 25–35 s.
+- **Styling comes straight from Apache** with `Cache-Control: public, max-age=604800`, so
+  moving between pages doesn't re-fetch ~10 files through Flask. Apache's `www-data` user has
+  read ACLs on `static/css`, `static/js` and `static/images` only. After changing a CSS file,
+  phones may show the old styling for up to a week unless reloaded.
+- **Videos are not aliased**: `/static/video/…` goes through Flask so the login protects it.
+- **`feedtimes(feeddate)` is indexed** (`createFiles.py` creates it). The newest-first feed
+  lists took 0.24 s without it. On a database made before the index existed:
+  ```bash
+  sudo -u feeder sqlite3 /var/www/feeder/feeder/feeder.db "create index if not exists feedtimes_date on feedtimes(feeddate);"
+  ```
+- Typical page times on the Pi: home ~0.5 s, admin ~0.7 s, history ~0.35 s. A new browser
+  connection spends about 1 s on the TLS handshake (done by tailscaled); later requests reuse it.
+
+---
+
 ## Hardware Reference
 
 ### GPIO Pins (BOARD numbering)
@@ -191,7 +242,9 @@ The Pi is accessible via **Tailscale** (already installed if Tailscale is on you
 ssh pi@<tailscale-ip>
 ```
 
-No port forwarding or DuckDNS required.
+The web UI is at `https://cat-feeder.tailb8be4c.ts.net` from any device on the tailnet. No port
+forwarding or DuckDNS required. To limit which tailnet devices can open it, use Tailscale's
+access rules in the admin console.
 
 ---
 
@@ -204,6 +257,13 @@ tail -20 /var/www/feeder/feeder/logs/apacheError.log
 sudo tailscale serve status        # should show / proxy http://127.0.0.1:80 (tailnet only)
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1/   # 302 = app answering
 ```
+
+### Web UI slow
+- First visit very slow (~30 s): the app isn't being preloaded — check the `WSGIScriptAlias`
+  line still has `process-group=feeder application-group=%{GLOBAL}`.
+- Every page slow and styling requests show in `feeder-access.log`: check
+  `curl -sI http://127.0.0.1/static/css/navBar.css | grep -i cache-control` says `max-age=604800`.
+- Admin start/stop buttons do nothing: check the sudo rule (Step 8) with `sudo -l -U feeder`.
 
 ### Camera not working / no recordings
 The ribbon is marginal and the sensor sometimes fails to probe at boot. `feeder-camrec` re-probes
@@ -248,5 +308,8 @@ ps aux --sort=-%cpu | head -10
 - UFW firewall: only port 22 (SSH) open. The web UI has no open port: Apache listens on
   `127.0.0.1:80` only and is reached through Tailscale serve (HTTPS, tailnet only)
 - Local network (192.168.1.x) and Tailscale (100.x.x.x) are whitelisted in fail2ban
+- Every page needs the app login, recorded videos included; only the login page and the
+  styling files (CSS, JS, images) are public — and only to the tailnet
+- The app's sudo rights are limited to starting/stopping the feeder services (Step 8)
 - `app.cfg` is gitignored — never commit it (contains secret key)
 - Google API credentials (`googleapisecret.json`) are gitignored — never commit
