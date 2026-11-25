@@ -2,19 +2,19 @@
 # =============================================================================
 # Pet Feeder — Raspberry Pi Zero (original) Setup Script
 # =============================================================================
-# Target OS: Raspberry Pi OS Bullseye Lite 32-bit (REQUIRED for Pi Zero v1)
-#            Do NOT use Bookworm — it dropped ARMv6 support.
+# Target OS: Raspberry Pi OS Lite 32-bit, Trixie (13) — what the Pi runs today.
+#            The camera setup (picamera2 + feeder-cam) needs Trixie.
 #
 # Usage: sudo bash setup.sh
 #
 # What this does:
 #   1. System update
 #   2. Enable camera, I2C, serial interfaces
-#   3. Install system dependencies (Apache, mod_wsgi, motion, sqlite3)
+#   3. Install system dependencies (Apache, mod_wsgi, motion, picamera2, sqlite3)
 #   4. Create Python virtualenv and install pip packages
 #   5. Clone pet feeder app from GitHub
 #   6. Configure Apache virtual host
-#   7. Configure motion (camera)
+#   7. Configure the camera stream (feeder-cam) and motion
 #   8. Install init.d services (button + time scheduler)
 #   9. Set up log rotation
 #  10. Set correct permissions
@@ -72,8 +72,12 @@ info "System updated"
 # =============================================================================
 step "Enabling interfaces"
 
-info "Enabling camera..."
-raspi-config nonint do_camera 0
+info "Enabling camera (ov5647, Pi Camera v1)..."
+# Load the sensor overlay explicitly rather than relying on auto-detect
+CONFIG_TXT=/boot/firmware/config.txt
+[[ -f $CONFIG_TXT ]] || CONFIG_TXT=/boot/config.txt
+sed -i 's/^camera_auto_detect=1/camera_auto_detect=0/' "$CONFIG_TXT"
+grep -q "^dtoverlay=ov5647" "$CONFIG_TXT" || printf '\n[all]\ndtoverlay=ov5647\n' >> "$CONFIG_TXT"
 
 info "Enabling I2C..."
 raspi-config nonint do_i2c 0
@@ -81,12 +85,6 @@ raspi-config nonint do_i2c 0
 info "Enabling serial hardware (no login shell)..."
 raspi-config nonint do_serial_hw 0
 raspi-config nonint do_serial_cons 1
-
-# Load camera module at boot
-if ! grep -q "bcm2835-v4l2" /etc/modules; then
-    echo "bcm2835-v4l2" >> /etc/modules
-    info "Added bcm2835-v4l2 to /etc/modules"
-fi
 
 # =============================================================================
 # 3. SYSTEM DEPENDENCIES
@@ -102,10 +100,14 @@ apt-get install -y -qq \
     libapache2-mod-wsgi-py3 \
     sqlite3 \
     motion \
+    acl \
     git \
     logrotate \
     usbutils \
     i2c-tools
+
+# Camera library; the recommends pull in a desktop/Qt stack the Pi Zero doesn't need
+apt-get install -y -qq --no-install-recommends python3-picamera2
 
 info "System packages installed"
 
@@ -223,22 +225,32 @@ usermod -aG video www-data
 info "Apache configured"
 
 # =============================================================================
-# 7. MOTION (camera)
+# 7. CAMERA STREAM + MOTION
 # =============================================================================
-step "Configuring motion"
+step "Configuring camera stream and motion"
+
+# motion can't open the camera directly on 32-bit Trixie (libcamera's V4L2 compat layer
+# misses __ioctl_time64), so feeder-cam reads it with picamera2 and serves MJPEG on
+# 127.0.0.1:8090, and motion reads that stream.
+install -d -m 755 /usr/local/lib/feeder-cam
+install -m 755 "$APP_DIR/feeder/camera/camstream.py" /usr/local/lib/feeder-cam/camstream.py
+install -m 755 "$APP_DIR/feeder/camera/probe-camera.sh" /usr/local/lib/feeder-cam/probe-camera.sh
+install -m 644 "$APP_DIR/feeder/camera/feeder-cam.service" /etc/systemd/system/feeder-cam.service
 
 # Add pi user to motion group
 usermod -aG motion ${FEEDER_USER}
+usermod -aG video motion
 
 cat > /etc/motion/motion.conf << EOF
 daemon off
 setup_mode off
 log_level 6
 target_dir $APP_DIR/feeder/static/video
-videodevice /dev/video0
+netcam_url http://127.0.0.1:8090/stream.mjpg
 width 640
 height 480
 # 5 fps, not 15: the Pi Zero W has one core and at 15 fps the camera starves the web app
+# (keep in step with FrameRate in camera/camstream.py)
 framerate 5
 text_left CAMERA1
 text_right %Y-%m-%d\n%T-%q
@@ -260,18 +272,23 @@ webcontrol_port 8080
 webcontrol_localhost on
 webcontrol_parms 0
 stream_port 8081
+stream_maxrate 2
 # The stream only listens on the Pi; the web app shows it at /live behind its login
 stream_localhost on
 EOF
 
-# Motion camera startup delay (prevents race condition with bcm2835 driver)
+# Start motion after the camera stream (replaces the old 15 s sleep for the bcm2835 driver)
 mkdir -p /etc/systemd/system/motion.service.d
-cat > /etc/systemd/system/motion.service.d/camera-wait.conf << EOF
-[Service]
-ExecStartPre=/bin/sleep 15
+rm -f /etc/systemd/system/motion.service.d/camera-wait.conf
+cat > /etc/systemd/system/motion.service.d/feeder-cam.conf << EOF
+[Unit]
+Wants=feeder-cam.service
+After=feeder-cam.service
 EOF
 
-info "Motion configured with 15s startup delay (prevents camera busy errors)"
+systemctl daemon-reload
+systemctl enable feeder-cam.service motion.service
+info "Camera stream (feeder-cam) and motion configured"
 
 # =============================================================================
 # 8. SERVICES (button listener + feed scheduler)
@@ -347,6 +364,12 @@ step "Setting permissions"
 chown -R ${FEEDER_USER}:www-data "$APP_DIR"
 chmod -R 750 "$APP_DIR"
 chmod -R 770 "$APP_DIR/feeder"
+
+# motion (its own user) saves recordings into static/video: let it through the parent
+# folders without being able to list them, and own the video folder's group
+setfacl -m u:motion:x "$APP_DIR" "$APP_DIR/feeder" "$APP_DIR/feeder/static"
+chgrp motion "$APP_DIR/feeder/static/video"
+chmod 2770 "$APP_DIR/feeder/static/video"
 chmod 640 "$APP_DIR/feeder/app.cfg"
 
 info "Permissions set"
@@ -409,7 +432,7 @@ echo "  2. Install your SSH public key:"
 echo "     ssh-copy-id pi@$(hostname -I | awk '{print $1}')"
 echo ""
 echo "  3. Start services:"
-echo "     sudo systemctl start apache2 motion feederbutton feedertimer"
+echo "     sudo systemctl start apache2 feeder-cam motion feederbutton feedertimer"
 echo ""
 echo "  4. Check logs:"
 echo "     tail -f $APP_DIR/feeder/logs/apacheError.log"

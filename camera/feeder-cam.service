@@ -1,0 +1,18 @@
+[Unit]
+Description=Pet feeder camera MJPEG stream (localhost only, for motion)
+Before=motion.service
+
+[Service]
+DynamicUser=yes
+SupplementaryGroups=video
+ExecStartPre=+/usr/local/lib/feeder-cam/probe-camera.sh
+ExecStart=/usr/bin/python3 /usr/local/lib/feeder-cam/camstream.py
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

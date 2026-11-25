@@ -2,14 +2,9 @@
 
 ## ⚠️ Critical: OS Version
 
-The **original Pi Zero (v1)** uses an **ARMv6 CPU**. This matters:
+The feeder is an **original Pi Zero W** (ARMv6, one core). It runs **Raspberry Pi OS Lite 32-bit, Trixie (13)**, and the camera setup in `setup.sh` (picamera2 + the `feeder-cam` stream) is written for that.
 
-| OS | Status |
-|----|--------|
-| Raspberry Pi OS **Bookworm** (current) | ❌ **Does not support Pi Zero v1** |
-| Raspberry Pi OS **Bullseye** 32-bit Lite | ✅ **Use this** |
-
-Always use Bullseye Lite (32-bit). Do not use the Desktop version — it wastes RAM the Pi Zero doesn't have to spare.
+Always use the **32-bit Lite** image. The 64-bit images don't run on a Pi Zero v1, and the Desktop version wastes RAM the Pi Zero doesn't have to spare.
 
 ---
 
@@ -18,7 +13,7 @@ Always use Bullseye Lite (32-bit). Do not use the Desktop version — it wastes 
 1. Download **Raspberry Pi Imager**: https://www.raspberrypi.com/software/
 2. In the imager:
    - **Device**: Raspberry Pi Zero
-   - **OS**: Raspberry Pi OS (other) → **Raspberry Pi OS Lite (32-bit)** — confirm it says *Bullseye*
+   - **OS**: Raspberry Pi OS (other) → **Raspberry Pi OS Lite (32-bit)** — confirm it says *Trixie*
    - **Storage**: your SD card (8GB minimum, 16GB recommended for video storage)
 
 3. Click the **⚙️ gear icon** (OS Customisation) before writing:
@@ -144,8 +139,14 @@ Default login is set during `createFiles.py` — check the upstream docs if you'
 | Treat hopper motor | 18 | Relay |
 
 ### Camera
-- Standard Pi Camera (CSI ribbon connector)
-- Streams on port **8081** (local network only by default)
+- Pi Camera v1 (ov5647 sensor, CSI ribbon connector), loaded with `dtoverlay=ov5647` in `config.txt`
+- `feeder-cam.service` reads the camera with picamera2 and serves MJPEG on `127.0.0.1:8090`
+  (motion can't open the camera itself on 32-bit Trixie). Its files are in `camera/`.
+- `motion` reads that stream, records on movement and re-streams on `127.0.0.1:8081`;
+  the web app shows it at `/live` behind the login
+- Both run at **5 fps**: at 15 fps the camera kept the single CPU core at 100% and web pages
+  took up to a minute to load. Change `FrameRate` in `camera/camstream.py` and `framerate`
+  in `motion.conf` together
 - Motion-triggered video saved to `/var/www/feeder/feeder/static/video/`
 - Videos auto-deleted after 1 day (configurable in `app.cfg`)
 
@@ -189,12 +190,16 @@ sudo systemctl status apache2
 tail -20 /var/www/feeder/feeder/logs/apacheError.log
 ```
 
-### Camera "device busy" on boot
-Motion has a 15-second startup delay baked in to prevent race conditions with the bcm2835 driver. If still failing:
+### Camera not working / no recordings
+The ribbon is marginal and the sensor sometimes fails to probe at boot. `feeder-cam` re-probes it
+up to 10 times before starting (`camera/probe-camera.sh`); motion starts after `feeder-cam`.
 ```bash
-sudo modprobe -r bcm2835_v4l2 && sudo modprobe bcm2835_v4l2
-sudo systemctl restart motion
+systemctl status feeder-cam motion
+journalctl -u feeder-cam -u motion -n 30
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8090/stream.mjpg --max-time 3   # camera stream
+sudo systemctl restart feeder-cam motion
 ```
+A single "Error capturing first image" from motion right after a restart is normal; it connects a second later.
 
 ### Feed button not working
 ```bash
