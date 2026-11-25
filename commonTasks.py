@@ -4,9 +4,8 @@ import time
 from Adafruit_CharLCD import Adafruit_CharLCD
 import datetime
 import os
-import gspread
-from oauth2client.service_account import ServiceAccountCredentials
-from gspread_formatting import *
+# gspread / oauth2client / gspread_formatting are imported inside update_spreadsheet:
+# they take ~16 s to import on a Pi Zero and are only needed for the Google Sheet.
 import RPi.GPIO as GPIO
 
 # Find config file
@@ -200,6 +199,9 @@ def spreadsheetFeed():
 
 
 def update_spreadsheet():
+    import gspread
+    from oauth2client.service_account import ServiceAccountCredentials
+    from gspread_formatting import cellFormat, color, textFormat, format_cell_range
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
     creds = ServiceAccountCredentials.from_json_keyfile_name('/var/www/feeder/feeder/googleapisecret.json', scope)
     client = gspread.authorize(creds)

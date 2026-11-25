@@ -21,6 +21,8 @@ try:
         con = sqlite3.connect(dbPath)
         cur = con.execute(
             """CREATE TABLE feedtimes (feedid integer primary key autoincrement,feeddate string,feedtype integer);""")
+        # Newest-first feed lists (home, history) scan this instead of sorting the whole table
+        cur = con.execute("""CREATE INDEX feedtimes_date on feedtimes(feeddate);""")
         cur = con.execute("""CREATE TABLE feedtypes (feedtype integer primary key,description string);""")
         cur = con.execute(
             """CREATE TABLE loginLog (loginLogID integer primary key autoincrement,loginName text null,loginPW text null,loginDate text null);""")

@@ -72,7 +72,7 @@ def home_page():
         finalFeedTimeList = []
         for x in latestXNumberFeedTimes:
             x = list(x)
-            dateobject = datetime.datetime.strptime(x[0], '%Y-%m-%d %H:%M:%S')
+            dateobject = datetime.datetime.fromisoformat(x[0])
             x[0] = dateobject.strftime("%m-%d-%y %I:%M %p")
             x = tuple(x)
             finalFeedTimeList.append(x)
@@ -80,7 +80,7 @@ def home_page():
         finalUpcomingFeedTimeList = []
         for x in upcomingXNumberFeedTimes:
             x = list(x)
-            dateobject = datetime.datetime.strptime(x[0], '%Y-%m-%d %H:%M:%S')
+            dateobject = datetime.datetime.fromisoformat(x[0])
             finalString = dateobject.strftime("%m-%d-%y %I:%M %p")
 
             # 1900-01-01 default placeholder date for daily reoccuring feeds
@@ -302,15 +302,14 @@ def video_page(videoid):
 
 
 def DetectCamera():
+    # The camera is working if feeder-camrec's live view is listening. A local connect
+    # takes about a millisecond; starting systemctl took 0.2 s on the Pi Zero.
+    import socket
     try:
-
-        # vcgencmd get_camera only knows the legacy camera stack (always detected=0 on
-        # Trixie); report on the camera service instead: feeder-camrec, or the older
-        # feeder-cam (is-active succeeds if either is running).
-        process = subprocess.run(["systemctl", "is-active", "--quiet", "feeder-camrec", "feeder-cam"])
-        return 'detected=1' if process.returncode == 0 else 'detected=0'
-    except Exception as e:
-        return 'status=0'
+        socket.create_connection(('127.0.0.1', 8081), timeout=0.5).close()
+        return 'detected=1'
+    except OSError:
+        return 'detected=0'
 
 
 #####################################################################################
@@ -430,17 +429,10 @@ def logout():
 def admin_page():
     try:
         if 'userLogin' in session:
-            buttonServiceFullOutput = ControlService('feederButtonService', 'status')
-            buttonServiceFinalStatus = CleanServiceStatusOutput(str(buttonServiceFullOutput))
-
-            timeServiceFullOutput = ControlService('feederTimeService', 'status')
-            timeServiceFinalStatus = CleanServiceStatusOutput(str(timeServiceFullOutput))
-
-            sshServiceFullOutput = ControlService('ssh', 'status')
-            sshServiceFinalStatus = CleanServiceStatusOutput(str(sshServiceFullOutput))
-
-            webcameraServiceFullOutput = ControlService('motion', 'status')
-            webcameraServiceFinalStatus = CleanServiceStatusOutput(str(webcameraServiceFullOutput))
+            # One systemctl call for all four (no sudo needed to read status)
+            buttonServiceFinalStatus, timeServiceFinalStatus, sshServiceFinalStatus, \
+                webcameraServiceFinalStatus = ServiceStatus(
+                    'feederButtonService', 'feederTimeService', 'ssh', 'feeder-camrec')
 
             # Bad login log
             conn = sqlite3.connect(DB)
@@ -504,9 +496,7 @@ def clearBadLoginList():
 def startWebcamService():
     try:
         if 'userLogin' in session:
-
-
-            startWebcamServiceFullOutput = ControlService('motion', 'start')
+            ControlService('feeder-camrec', 'start')
 
             flash('Webcam Service Started!')
             return redirect(url_for('admin_page'))
@@ -520,11 +510,7 @@ def startWebcamService():
 def stopWebcamService():
     try:
         if 'userLogin' in session:
-            stopWebcamServiceFullOutput = ControlService('motion', 'stop')
-
-            process = subprocess.Popen(["sudo", "pkill", "-f", "motion.conf"],
-                                       stdout=subprocess.PIPE,
-                                       stderr=subprocess.STDOUT)
+            ControlService('feeder-camrec', 'stop')
 
             flash('Webcam Service Stopped!')
             return redirect(url_for('admin_page'))
@@ -629,6 +615,30 @@ def ControlService(serviceToCheck, command):
         return render_template('error.html', resultsSET=e)
 
 
+def ServiceStatus(*names):
+    """'Active: since <time>' or 'Inactive: since <time>' for each service, from one
+    systemctl call (the admin page used to run sudo service X status four times)."""
+    try:
+        out = subprocess.run(['systemctl', 'show', '-p', 'LoadState,ActiveState,ActiveEnterTimestamp,'
+                              'InactiveEnterTimestamp', '--', *names],
+                             capture_output=True, text=True, timeout=10).stdout
+    except Exception:
+        return ['Unknown'] * len(names)
+    statuses = []
+    for block in out.strip().split('\n\n'):
+        props = dict(line.split('=', 1) for line in block.splitlines() if '=' in line)
+        if props.get('LoadState') == 'not-found':
+            statuses.append('Inactive: not installed')
+        elif props.get('ActiveState') in ('active', 'reloading'):
+            since = props.get('ActiveEnterTimestamp')
+            statuses.append('Active: since ' + since if since else 'Active')
+        else:
+            since = props.get('InactiveEnterTimestamp')
+            statuses.append('Inactive: since ' + since if since else 'Inactive')
+    statuses += ['Unknown'] * (len(names) - len(statuses))
+    return statuses[:len(names)]
+
+
 def CleanServiceStatusOutput(serviceOutput):
     try:
         if serviceOutput.find('could not be found') > 0:
@@ -667,7 +677,7 @@ def history_page():
             finalFeedTimeList = []
             for x in latestXNumberFeedTimes:
                 x = list(x)
-                dateobject = datetime.datetime.strptime(x[0], '%Y-%m-%d %H:%M:%S')
+                dateobject = datetime.datetime.fromisoformat(x[0])
                 x[0] = dateobject.strftime("%m-%d-%y %I:%M:%S %p")
                 x = tuple(x)
                 finalFeedTimeList.append(x)

@@ -200,7 +200,9 @@ EOF
 cat > /etc/apache2/sites-available/000-default.conf << EOF
 <VirtualHost *:80>
     WSGIDaemonProcess feeder user=www-data group=www-data threads=3
-    WSGIScriptAlias / $APP_DIR/feeder/feeder.wsgi
+    # process-group + application-group load the app when the daemon starts, not on the
+    # first visit (that took ~30 s on a Pi Zero)
+    WSGIScriptAlias / $APP_DIR/feeder/feeder.wsgi process-group=feeder application-group=%{GLOBAL}
 
     <Directory $APP_DIR/feeder>
         WSGIProcessGroup feeder
@@ -210,6 +212,17 @@ cat > /etc/apache2/sites-available/000-default.conf << EOF
     <Files feeder.wsgi>
         Require all granted
     </Files>
+
+    # Page styling straight from Apache, cached by browsers for a week. Videos are not
+    # aliased: they stay behind the app's login.
+    Alias /static/css $APP_DIR/feeder/static/css
+    Alias /static/js $APP_DIR/feeder/static/js
+    Alias /static/images $APP_DIR/feeder/static/images
+    <DirectoryMatch "^$APP_DIR/feeder/static/(css|js|images)">
+        Require all granted
+        Options None
+        Header set Cache-Control "public, max-age=604800"
+    </DirectoryMatch>
 
     ErrorLog $APP_DIR/feeder/logs/apacheError.log
     CustomLog $APP_DIR/feeder/logs/apacheAccess.log combined
