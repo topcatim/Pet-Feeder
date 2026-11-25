@@ -119,9 +119,20 @@ tail -f /var/www/feeder/feeder/logs/apacheError.log
 
 ## Step 7 — Access the Web UI
 
-Open in your browser:
+The web UI is only reachable over **Tailscale HTTPS** — Apache listens on `127.0.0.1:80`
+and Tailscale serve publishes it to your tailnet (tailnet only, no Funnel). Plain
+`http://<pi-ip>` on the LAN is refused by design.
+
+If the setup script couldn't do it (Tailscale wasn't logged in yet):
+```bash
+sudo tailscale up
+sudo tailscale serve --bg --https=443 http://127.0.0.1:80
+sudo tailscale serve status        # shows the address
 ```
-http://192.168.1.210
+HTTPS certificates must be enabled for the tailnet (admin console → DNS → HTTPS
+Certificates). Then open, from any device on your tailnet:
+```
+https://cat-feeder.tailb8be4c.ts.net
 ```
 
 Default login is set during `createFiles.py` — check the upstream docs if you've forgotten it, or reset the database.
@@ -190,6 +201,8 @@ No port forwarding or DuckDNS required.
 ```bash
 sudo systemctl status apache2
 tail -20 /var/www/feeder/feeder/logs/apacheError.log
+sudo tailscale serve status        # should show / proxy http://127.0.0.1:80 (tailnet only)
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1/   # 302 = app answering
 ```
 
 ### Camera not working / no recordings
@@ -232,7 +245,8 @@ ps aux --sort=-%cpu | head -10
 
 - SSH password authentication is **disabled** by setup script — key auth only
 - fail2ban bans after **3 failed attempts** for **24 hours**
-- UFW firewall: only ports 22 (SSH) and 80 (web UI) open
+- UFW firewall: only port 22 (SSH) open. The web UI has no open port: Apache listens on
+  `127.0.0.1:80` only and is reached through Tailscale serve (HTTPS, tailnet only)
 - Local network (192.168.1.x) and Tailscale (100.x.x.x) are whitelisted in fail2ban
 - `app.cfg` is gitignored — never commit it (contains secret key)
 - Google API credentials (`googleapisecret.json`) are gitignored — never commit

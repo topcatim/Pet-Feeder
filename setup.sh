@@ -13,11 +13,12 @@
 #   3. Install system dependencies (Apache, mod_wsgi, picamera2, PyAV, sqlite3)
 #   4. Create Python virtualenv and install pip packages
 #   5. Clone pet feeder app from GitHub
-#   6. Configure Apache virtual host
+#   6. Configure Apache virtual host (localhost only; Tailscale serve publishes it over HTTPS)
 #   7. Configure the camera (feeder-camrec: records movement, serves live view)
 #   8. Install init.d services (button + time scheduler)
 #   9. Set up log rotation
 #  10. Set correct permissions
+#  11. Publish the web UI over Tailscale HTTPS (tailnet only)
 # =============================================================================
 
 set -e
@@ -229,6 +230,11 @@ cat > /etc/apache2/sites-available/000-default.conf << EOF
 </VirtualHost>
 EOF
 
+# Apache only listens on the Pi itself. The web UI is published over HTTPS to your
+# tailnet by Tailscale serve (section 11), never as plain HTTP on the LAN.
+sed -i 's/^Listen 80$/Listen 127.0.0.1:80/' /etc/apache2/ports.conf
+grep -q '^Listen 127.0.0.1:80$' /etc/apache2/ports.conf || error "ports.conf: could not set Listen 127.0.0.1:80"
+
 a2enmod headers wsgi 2>/dev/null || true
 
 # Add www-data to gpio and video groups for GPIO + camera access
@@ -373,7 +379,7 @@ ufw --force reset
 ufw default deny incoming
 ufw default allow outgoing
 ufw allow 22/tcp comment 'SSH'
-ufw allow 80/tcp comment 'HTTP feeder'
+# No rule for the web UI: Apache only listens on 127.0.0.1, Tailscale serve publishes it
 ufw --force enable
 
 # Disable password auth (key auth only)
@@ -383,6 +389,21 @@ systemctl enable fail2ban
 systemctl restart fail2ban ssh
 
 info "Firewall, fail2ban, SSH key-only auth configured"
+
+# =============================================================================
+# 11. TAILSCALE (the only way to reach the web UI: HTTPS, tailnet only)
+# =============================================================================
+step "Tailscale"
+if ! command -v tailscale >/dev/null; then
+    curl -fsSL https://tailscale.com/install.sh | sh
+fi
+if tailscale status >/dev/null 2>&1; then
+    tailscale serve --bg --https=443 http://127.0.0.1:80
+    info "Web UI published at https://$(tailscale status --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["Self"]["DNSName"].rstrip("."))')"
+else
+    warn "Tailscale is not logged in yet: run 'sudo tailscale up', then"
+    warn "  sudo tailscale serve --bg --https=443 http://127.0.0.1:80"
+fi
 
 # =============================================================================
 # DONE
@@ -408,8 +429,8 @@ echo "     tail -f $APP_DIR/feeder/logs/apacheError.log"
 echo ""
 echo "  Web UI login: every page needs a login. Change the default admin password (ChangeMe!) straight away."
 echo ""
-echo "  5. Access feeder web UI:"
-echo "     http://$(hostname -I | awk '{print $1}')"
+echo "  5. Access feeder web UI (from a device on your tailnet; not reachable over plain HTTP):"
+echo "     sudo tailscale serve status    # shows the https://<name>.<tailnet>.ts.net address"
 echo ""
 warn "Reboot recommended to activate camera and interface changes:"
 echo "     sudo reboot"
