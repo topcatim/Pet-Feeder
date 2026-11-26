@@ -345,6 +345,19 @@ def live_stream():
                     headers={'Cache-Control': 'no-store'})
 
 
+@app.route('/live/frame')
+def live_frame():
+    # One JPEG of the live view; live.html fetches these in a loop (~3 a second) because
+    # iPhone Safari doesn't draw the multipart /live/stream over Tailscale's HTTPS
+    import urllib.request
+    try:
+        with urllib.request.urlopen('http://127.0.0.1:8081/frame.jpg', timeout=5) as upstream:
+            frame = upstream.read()
+    except Exception as e:
+        return Response('Camera unavailable: ' + str(e), status=503, mimetype='text/plain')
+    return Response(frame, mimetype='image/jpeg', headers={'Cache-Control': 'no-store'})
+
+
 ######################################################################################
 ##########################################ADMIN PAGE##################################
 ######################################################################################

@@ -23,5 +23,5 @@ See [REBUILD.md](REBUILD.md) — flash the card, run `setup.sh`, then the few ma
 ## Security
 
 - **Every page needs a login** (Flask session, 30 days), including the feed buttons and recorded videos. Only the login page and page styling are public (and only to the tailnet).
-- **Live video** is at `/live`, behind the same login. The camera's stream (port 8081, from `camera/camrecord.py`) only listens on the Pi itself.
+- **Live video** is at `/live`, behind the same login. The camera's live view (port 8081, from `camera/camrecord.py`) only listens on the Pi itself; the page fetches single frames through the app (~3 a second), which works in iPhone Safari.
 - Change the default `admin` password (`ChangeMe!`) on any new install.

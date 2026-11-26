@@ -6,7 +6,9 @@ records at 15 fps for roughly the CPU that motion needed at 5 fps.
 
 - main stream (640x480) -> H.264, hardware -> 3 s ring buffer -> .mp4 while something moves
 - lores stream (160x120) -> movement check five times a second
-- main stream -> MJPEG, hardware, every 5th frame -> http://127.0.0.1:8081/ (the app's /live)
+- main stream -> MJPEG, hardware, every 5th frame -> http://127.0.0.1:8081/ as a stream, and
+  /frame.jpg as the latest single frame (the app's /live page polls that: iPhone Safari
+  doesn't draw the multipart stream over Tailscale's HTTPS)
 """
 import io
 import os
@@ -53,6 +55,9 @@ class FrameBuffer(io.BufferedIOBase):
 
 class Handler(server.BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path == '/frame.jpg':
+            self.send_frame()
+            return
         if self.path not in ('/', '/stream.mjpg'):
             self.send_error(404)
             return
@@ -73,6 +78,21 @@ class Handler(server.BaseHTTPRequestHandler):
                 self.wfile.write(b'\r\n')
         except (BrokenPipeError, ConnectionResetError):
             pass
+
+    def send_frame(self):
+        with live.condition:
+            if live.frame is None:
+                live.condition.wait(timeout=2)
+            frame = live.frame
+        if frame is None:
+            self.send_error(503, 'No frame yet')
+            return
+        self.send_response(200)
+        self.send_header('Cache-Control', 'no-store')
+        self.send_header('Content-Type', 'image/jpeg')
+        self.send_header('Content-Length', str(len(frame)))
+        self.end_headers()
+        self.wfile.write(frame)
 
     def log_message(self, *args):
         pass

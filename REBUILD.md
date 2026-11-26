@@ -166,7 +166,7 @@ from a web page could lock you out.
 iPhone ──HTTPS (tailnet only)──▶ tailscaled :443 ──▶ Apache 127.0.0.1:80
                                                        ├─ /static/css, js, images → files, cached 1 week
                                                        └─ everything else → Flask app (mod_wsgi daemon, login)
-                                                            └─ /live/stream ◀── feeder-camrec 127.0.0.1:8081
+                                                            └─ /live/frame ◀── feeder-camrec 127.0.0.1:8081/frame.jpg
 ```
 
 Kept this way because the Pi Zero has one slow core:
@@ -207,8 +207,10 @@ Kept this way because the Pi Zero has one slow core:
     CPU core; the old motion setup maxed it out at 15 fps in software)
   - checks a tiny 80x60 copy of the image 5 times a second for movement, and saves
     `cam-YYYYMMDDHHMMSS.mp4` from 3 s before the movement to about 10 s after it (60 s max per file)
-  - serves the live view (MJPEG, 3 fps) on `127.0.0.1:8081`; the web app shows it at `/live`
-    behind the login
+  - serves the live view (3 fps) on `127.0.0.1:8081`: `/frame.jpg` is the latest single frame,
+    `/` an MJPEG stream. The web app's `/live` page (behind the login) fetches frames one after
+    another through `/live/frame`, because iPhone Safari shows nothing for the MJPEG stream over
+    Tailscale's HTTPS
 - Sensitivity and timings are constants at the top of `camrecord.py`
 - It runs as the `motion` user (left over from the old motion setup, which it replaced)
 - Recordings saved to `/var/www/feeder/feeder/static/video/`
@@ -271,7 +273,7 @@ it up to 10 times before starting (`camera/probe-camera.sh`). Its log shows each
 ```bash
 systemctl status feeder-camrec
 journalctl -u feeder-camrec -n 30
-curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8081/ --max-time 3   # live view (200 = OK)
+curl -s -o /dev/null -w "%{http_code} %{size_download}\n" http://127.0.0.1:8081/frame.jpg   # live view (200 + ~17000 bytes = OK)
 sudo systemctl restart feeder-camrec
 ```
 The web page hides the live view and videos when `feeder-camrec` isn't running.

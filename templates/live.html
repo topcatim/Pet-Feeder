@@ -7,8 +7,38 @@
 {% block main %}
 <div class="container text-center">
     <h3>Live video</h3>
-    <!-- Served through this site (login required); the camera itself only listens on the Pi -->
-    <img src="/live/stream" alt="Live camera" style="max-width:100%;height:auto;border-radius:6px;">
+    <!-- Served through this site (login required); the camera itself only listens on the Pi.
+         Single frames fetched in a loop rather than the /live/stream MJPEG: iPhone Safari
+         shows nothing for that stream over Tailscale's HTTPS. -->
+    <img id="live" src="/live/frame" alt="Live camera" width="640" height="480"
+         style="max-width:100%;height:auto;border-radius:6px;background:#eee;">
+    <p id="liveStatus" class="text-muted"></p>
     <p><a href="/">Back</a></p>
 </div>
+<script>
+(function () {
+    var img = document.getElementById('live');
+    var status = document.getElementById('liveStatus');
+    var INTERVAL = 333;      // ms per frame: the camera makes 3 a second
+    var timer = null, requested = Date.now();
+
+    function next(delay) {
+        clearTimeout(timer);
+        timer = setTimeout(function () {
+            if (document.hidden) return;          // paused; resumes on visibilitychange
+            requested = Date.now();
+            img.src = '/live/frame?t=' + requested;
+        }, delay);
+    }
+    // Count the interval from when the frame was asked for, so the time a frame takes to
+    // arrive doesn't slow the rate down
+    img.onload = function () {
+        status.textContent = '';
+        next(Math.max(0, INTERVAL - (Date.now() - requested)));
+    };
+    img.onerror = function () { status.textContent = 'Camera not responding, retrying…'; next(2000); };
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) next(0); });
+    if (img.complete) next(0);   // first frame beat this script
+})();
+</script>
 {% endblock %}
