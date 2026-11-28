@@ -19,6 +19,7 @@
 #   9. Set up log rotation
 #  10. Set correct permissions
 #  11. Publish the web UI over Tailscale HTTPS (tailnet only)
+#  12. Stay on Wi-Fi: power saving off, petfeeder-netwatch (Wi-Fi reset, then reboot), persistent logs
 # =============================================================================
 
 set -e
@@ -404,6 +405,18 @@ else
     warn "Tailscale is not logged in yet: run 'sudo tailscale up', then"
     warn "  sudo tailscale serve --bg --https=443 http://127.0.0.1:80"
 fi
+
+# =============================================================================
+# 12. STAYING ON WI-FI (Tim's rule for every Pi since 28 Nov 2026)
+# =============================================================================
+# An eero update restarted the router and the cat flap Pi never rejoined. Wi-Fi power saving
+# off, a watchdog that resets Wi-Fi and then reboots, and logs kept across reboots.
+step "Staying on Wi-Fi"
+bash "$APP_DIR/feeder/netwatch/install-netwatch.sh" petfeeder
+install -d /etc/systemd/journald.conf.d
+printf '[Journal]\nStorage=persistent\nSystemMaxUse=50M\n' > /etc/systemd/journald.conf.d/petfeeder.conf
+systemctl restart systemd-journald; journalctl --flush
+info "Wi-Fi power saving off, petfeeder-netwatch running, logs kept across reboots"
 
 # =============================================================================
 # DONE

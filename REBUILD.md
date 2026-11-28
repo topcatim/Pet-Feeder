@@ -64,6 +64,11 @@ sudo bash setup.sh
 - Configure Apache, the camera service (feeder-camrec), log rotation
 - Install systemd services for button listener and feed scheduler
 - Apply security hardening (fail2ban, UFW firewall, SSH key-only auth)
+- Keep the Pi on Wi-Fi after a router restart: Wi-Fi power saving off, the `petfeeder-netwatch`
+  watchdog (`netwatch/`: Wi-Fi off and on after 3 min without the router, NetworkManager restart after
+  6 min, reboot after 10 min, at most once an hour) and logs kept across reboots. Added 28 Nov 2026,
+  after an eero update left the cat flap Pi offline for six hours. Check it with
+  `journalctl -u petfeeder-netwatch`.
 
 ---
 
